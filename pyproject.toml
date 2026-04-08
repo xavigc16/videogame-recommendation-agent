@@ -5,5 +5,12 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "dotenv>=0.9.9",
+    "langchain>=1.2.12",
+    "langchain-openai>=1.1.11",
+    "langchain-postgres>=0.0.17",
+    "langgraph>=1.1.2",
     "pre-commit>=4.5.1",
+    "psycopg>=3.3.3",
+    "sentence-transformers>=5.3.0",
 ]
