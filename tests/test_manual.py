@@ -1,8 +1,9 @@
-from src.agent import app
 from langchain_core.messages import HumanMessage
 
 #TODO: This test is legacy
 def run_trace_test():
+    from src.agent import app
+
     inputs = {"messages": [HumanMessage(content="What is the capital of France?")]}
     
     for output in app.stream(inputs):

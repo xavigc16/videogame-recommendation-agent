@@ -1,3 +1,4 @@
+import logging
 from typing import Literal
 
 from langchain_openai import ChatOpenAI
@@ -8,8 +9,10 @@ from langgraph.prebuilt import ToolNode
 from typing_extensions import Annotated, TypedDict
 
 from src.config import AGENT_MODEL, OPENAI_API_KEY, OPENAI_BASE_URL
+from src.logging_config import configure_logging
 from src.tools import tools
 
+logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """You are a video game review-opinion assistant.
 
@@ -43,29 +46,65 @@ class MessagesState(TypedDict):
     llm_calls: int
 
 
+def _tool_call_names(message: AnyMessage) -> list[str]:
+    tool_calls = getattr(message, "tool_calls", None) or []
+    names = []
+    for tool_call in tool_calls:
+        if isinstance(tool_call, dict):
+            names.append(tool_call.get("name", "unknown_tool"))
+        else:
+            names.append(getattr(tool_call, "name", "unknown_tool"))
+    return names
+
+
 def llm_call(state: MessagesState):
     """LLM decides whether to call a tool or reply to the user"""
+    current_call = state.get("llm_calls", 0) + 1
+    logger.info("Agent graph entering node: llm_call (call=%s)", current_call)
     response = model.invoke([SystemMessage(content=SYSTEM_PROMPT)] + state["messages"])
+    tool_names = _tool_call_names(response)
+    if tool_names:
+        logger.info("LLM requested tool calls: %s", ", ".join(tool_names))
+    else:
+        logger.info("LLM returned final response with no tool calls")
+    logger.info("Agent graph exiting node: llm_call (call=%s)", current_call)
 
     return {
         "messages": [response],
-        "llm_calls": state.get("llm_calls", 0) + 1,
+        "llm_calls": current_call,
     }
 
 
 def should_continue(state: MessagesState) -> Literal["tool_node", END]:
     """Decide if we should continue the loop or stop based upon whether the LLM made a tool call"""
     last_message = state["messages"][-1]
-    if getattr(last_message, "tool_calls", None) and state.get("llm_calls", 0) < 3:
+    tool_names = _tool_call_names(last_message)
+    if tool_names and state.get("llm_calls", 0) < 3:
+        logger.info("Agent graph routing from llm_call to tool_node")
         return "tool_node"
 
+    if tool_names:
+        logger.info("Agent graph routing from llm_call to END after reaching call limit")
+    else:
+        logger.info("Agent graph routing from llm_call to END")
     return END
+
+
+tool_node = ToolNode(tools)
+
+
+def run_tool_node(state: MessagesState):
+    """Run tools while logging graph movement through the tool node."""
+    logger.info("Agent graph entering node: tool_node")
+    result = tool_node.invoke(state)
+    logger.info("Agent graph exiting node: tool_node")
+    return result
 
 
 agent_builder = StateGraph(MessagesState)
 
 agent_builder.add_node("llm_call", llm_call)
-agent_builder.add_node("tool_node", ToolNode(tools))
+agent_builder.add_node("tool_node", run_tool_node)
 
 agent_builder.add_edge(START, "llm_call")
 agent_builder.add_conditional_edges(
@@ -74,12 +113,17 @@ agent_builder.add_conditional_edges(
 )
 agent_builder.add_edge("tool_node", "llm_call")
 agent = agent_builder.compile()
+app = agent
 
 
 def ask_agent(query: str) -> str:
     """Invoke the review-opinion agent and return the final answer text."""
+    logger.info("Starting agent invocation")
     result = agent.invoke({"messages": [HumanMessage(content=query)], "llm_calls": 0})
+    logger.info("Finished agent invocation")
     return result["messages"][-1].content
 
+
 if __name__ == "__main__":
+    configure_logging()
     print(ask_agent("What are people saying about Hollow Knight?"))
