@@ -1,6 +1,7 @@
 from src.agent import app
 from langchain_core.messages import HumanMessage
 
+#TODO: This test is legacy
 def test_agent_can_respond():
 
     inputs = {"messages": [HumanMessage(content="Say the word 'Banana' and nothing else.")]}
