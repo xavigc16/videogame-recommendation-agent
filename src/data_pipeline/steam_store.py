@@ -1,12 +1,15 @@
+import argparse
 import json
-import sys
+import sqlite3
 from dataclasses import asdict, dataclass
 from html.parser import HTMLParser
+from pathlib import Path
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen as default_urlopen
 
 
 STEAM_APPDETAILS_URL = "https://store.steampowered.com/api/appdetails"
+DEFAULT_DB_PATH = Path("data/steam_games.sqlite3")
 
 
 class SteamStoreError(RuntimeError):
@@ -85,6 +88,41 @@ def fetch_steam_app(app_id: int, *, timeout: int = 10, urlopen=default_urlopen) 
     return _normalize_app(app_id, data, url)
 
 
+def save_steam_app(app: SteamApp, database_path: str | Path = DEFAULT_DB_PATH) -> None:
+    path = Path(database_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            """
+            create table if not exists steam_apps (
+                app_id integer primary key,
+                name text not null,
+                data_json text not null,
+                recommendation_text text not null,
+                fetched_at text not null default current_timestamp
+            )
+            """
+        )
+        connection.execute(
+            """
+            insert into steam_apps (app_id, name, data_json, recommendation_text)
+            values (?, ?, ?, ?)
+            on conflict(app_id) do update set
+                name = excluded.name,
+                data_json = excluded.data_json,
+                recommendation_text = excluded.recommendation_text,
+                fetched_at = current_timestamp
+            """,
+            (
+                app.app_id,
+                app.name,
+                json.dumps(app.to_dict(), sort_keys=True),
+                app.recommendation_text,
+            ),
+        )
+
+
 def _normalize_app(app_id: int, data: dict, source_url: str) -> SteamApp:
     return SteamApp(
         app_id=app_id,
@@ -119,9 +157,15 @@ def _clean_html(value: str) -> str:
 
 
 def main(argv: list[str] | None = None) -> None:
-    args = argv if argv is not None else sys.argv[1:]
-    app_id = int(args[0]) if args else 1091500
-    print(json.dumps(fetch_steam_app(app_id).to_dict(), indent=2, sort_keys=True))
+    parser = argparse.ArgumentParser()
+    parser.add_argument("app_id", type=int, nargs="?", default=1091500)
+    parser.add_argument("--db", type=Path)
+    args = parser.parse_args(argv)
+
+    app = fetch_steam_app(args.app_id)
+    if args.db:
+        save_steam_app(app, args.db)
+    print(json.dumps(app.to_dict(), indent=2, sort_keys=True))
 
 
 if __name__ == "__main__":
