@@ -1,5 +1,6 @@
 import argparse
 import json
+import logging
 import sqlite3
 from pathlib import Path
 
@@ -8,7 +9,9 @@ from langchain_qdrant import QdrantVectorStore
 
 from src.data_pipeline.steam_store import DEFAULT_DB_PATH
 from src.models.videogame import VideoGame
-from src.qdrant_store import qdrant_vector_store
+from src.qdrant_store import qdrant_vector_store, reset_qdrant_vector_store
+
+logger = logging.getLogger(__name__)
 
 
 def load_games(database_path: str | Path = DEFAULT_DB_PATH) -> list[VideoGame]:
@@ -51,7 +54,21 @@ def ingest_sqlite_to_qdrant(
     documents = [game_to_document(game) for game in load_games(database_path)]
     store = vector_store or qdrant_vector_store()
     ids = [document.id for document in documents]
-    return store.add_documents(documents, ids=ids)
+    try:
+        return store.add_documents(documents, ids=ids)
+    except Exception:
+        logger.warning(
+            "Qdrant ingestion failed; reconnecting and retrying",
+            exc_info=True,
+        )
+        reset_qdrant_vector_store()
+        if vector_store is not None:
+            raise
+        try:
+            return qdrant_vector_store().add_documents(documents, ids=ids)
+        except Exception:
+            logger.exception("Qdrant ingestion failed")
+            raise
 
 
 def main(argv: list[str] | None = None) -> None:

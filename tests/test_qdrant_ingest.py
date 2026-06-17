@@ -62,3 +62,38 @@ def test_ingest_sqlite_to_qdrant_uses_stable_document_ids(tmp_path):
     assert ids == ["1091500"]
     assert vector_store.ids == ["1091500"]
     assert vector_store.documents == [game_to_document(game)]
+
+
+def test_ingest_sqlite_to_qdrant_retries_after_qdrant_failure(tmp_path, monkeypatch):
+    from src.data_pipeline import qdrant_ingest
+
+    game = fetch_steam_app(
+        1091500,
+        urlopen=lambda request, timeout: FakeResponse(_app_payload()),
+    )
+    db_path = tmp_path / "games.sqlite3"
+    save_steam_app(game, db_path)
+    attempts = []
+    resets = []
+
+    class FakeVectorStore:
+        def __init__(self, should_fail):
+            self.should_fail = should_fail
+
+        def add_documents(self, documents, ids):
+            attempts.append(ids)
+            if self.should_fail:
+                raise RuntimeError("closed connection")
+            return ids
+
+    stores = [FakeVectorStore(True), FakeVectorStore(False)]
+    monkeypatch.setattr(qdrant_ingest, "qdrant_vector_store", lambda: stores.pop(0))
+    monkeypatch.setattr(
+        qdrant_ingest, "reset_qdrant_vector_store", lambda: resets.append(True)
+    )
+
+    ids = ingest_sqlite_to_qdrant(db_path)
+
+    assert ids == ["1091500"]
+    assert attempts == [["1091500"], ["1091500"]]
+    assert resets == [True]
