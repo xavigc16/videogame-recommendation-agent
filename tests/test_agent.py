@@ -1,11 +1,25 @@
-from src.agent import app
-from langchain_core.messages import HumanMessage
+from langchain_core.documents import Document
 
-def test_agent_can_respond():
+from src.agent import SYSTEM_PROMPT
+from src.retriever import format_recommendation_documents
+from src.tools import search_game_recommendations, tools
 
-    inputs = {"messages": [HumanMessage(content="Say the word 'Banana' and nothing else.")]}
-    final_state = app.invoke(inputs)
-    final_message = final_state["messages"][-1].content
-    
-    assert len(final_state["messages"]) > 1, "Agent did not add a message to the state"
-    assert "banana" in final_message.lower(), f"Agent failed to follow instructions. It said: {final_message}"
+
+def test_agent_is_recommendation_focused():
+    assert "video game recommendation assistant" in SYSTEM_PROMPT
+    assert "search_game_recommendations" in SYSTEM_PROMPT
+    assert tools == [search_game_recommendations]
+
+
+def test_recommendation_formatter_includes_game_and_source():
+    result = format_recommendation_documents(
+        [
+            Document(
+                page_content="Tight platforming and exploration.",
+                metadata={"game": "Hollow Knight", "source": "sample"},
+            )
+        ]
+    )
+
+    assert "[1] Hollow Knight (sample)" in result
+    assert "Tight platforming and exploration." in result

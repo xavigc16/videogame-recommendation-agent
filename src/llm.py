@@ -1,11 +1,11 @@
 from langchain_openai import ChatOpenAI
-from src.config import LLM_URL, LLM_MODEL
+from src.config import AGENT_MODEL, OPENAI_API_KEY, OPENAI_BASE_URL
 
 
 def get_llm():
     return ChatOpenAI(
-        model=LLM_MODEL, 
+        model=AGENT_MODEL,
         temperature=0,
-        base_url=LLM_URL,
-        api_key="s3cr3t"
+        base_url=OPENAI_BASE_URL,
+        api_key=OPENAI_API_KEY,
     )

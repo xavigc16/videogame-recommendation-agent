@@ -18,7 +18,7 @@ from src.config import (
 
 
 def build_vector_store() -> QdrantVectorStore:
-    """Connect to an existing Qdrant collection containing review chunks."""
+    """Connect to an existing Qdrant collection containing recommendation evidence."""
     dense_embeddings = FastEmbedEmbeddings(model_name=DENSE_MODEL_NAME)
     sparse_embeddings = FastEmbedSparse(model_name=SPARSE_MODEL_NAME)
 
@@ -36,15 +36,15 @@ def build_vector_store() -> QdrantVectorStore:
     )
 
 
-def build_review_retriever(k: int = RETRIEVER_K) -> VectorStoreRetriever:
-    """Return a LangChain retriever over the review-fragment collection."""
+def build_recommendation_retriever(k: int = RETRIEVER_K) -> VectorStoreRetriever:
+    """Return a LangChain retriever over the game recommendation collection."""
     return build_vector_store().as_retriever(search_kwargs={"k": k})
 
 
-def format_review_documents(documents: list[Document]) -> str:
-    """Format retrieved review chunks for an LLM tool response."""
+def format_recommendation_documents(documents: list[Document]) -> str:
+    """Format retrieved recommendation evidence for an LLM tool response."""
     if not documents:
-        return "No relevant review fragments were found in the Qdrant collection."
+        return "No relevant recommendation evidence was found in the Qdrant collection."
 
     formatted_chunks = []
     for index, document in enumerate(documents, start=1):
