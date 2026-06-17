@@ -6,7 +6,7 @@ def test_videogame_builds_recommendation_text():
         app_id=1091500,
         name="Cyberpunk 2077",
         type="game",
-        is_free=False,
+        price="$59.99",
         short_description="Open-world RPG.",
         about_the_game="Become a mercenary.",
         developers=["CD PROJEKT RED"],

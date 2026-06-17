@@ -1,8 +1,12 @@
 import json
-import sqlite3
 from io import BytesIO
 
-from src.data_pipeline.steam_store import fetch_steam_app, save_steam_app
+from src.data_pipeline.steam_store import (
+    fetch_steam_app,
+    load_steam_games,
+    load_steam_games_by_app_ids,
+    save_steam_app,
+)
 
 
 class FakeResponse:
@@ -31,6 +35,7 @@ def test_fetch_steam_app_normalizes_store_response():
                         "name": "Cyberpunk 2077",
                         "steam_appid": 1091500,
                         "is_free": False,
+                        "price_overview": {"final_formatted": "$59.99"},
                         "short_description": "Open-world RPG.",
                         "about_the_game": "<p>Become a mercenary.</p>",
                         "developers": ["CD PROJEKT RED"],
@@ -51,6 +56,7 @@ def test_fetch_steam_app_normalizes_store_response():
 
     assert game.app_id == 1091500
     assert game.name == "Cyberpunk 2077"
+    assert game.price == "$59.99"
     assert game.genres == ["RPG"]
     assert game.categories == ["Single-player"]
     assert game.platforms == ["windows"]
@@ -60,24 +66,61 @@ def test_fetch_steam_app_normalizes_store_response():
     )
 
 
-def test_save_steam_app_writes_sqlite_file(tmp_path):
+def test_save_steam_app_upserts_postgres_row_without_search_text():
     game = fetch_steam_app(
         1091500,
         urlopen=lambda request, timeout: FakeResponse(_app_payload()),
     )
-    db_path = tmp_path / "games.sqlite3"
+    connection = FakeConnection()
 
-    save_steam_app(game, db_path)
+    save_steam_app(
+        game,
+        "postgresql://example/test",
+        connect=lambda dsn: connection,
+    )
 
-    with sqlite3.connect(db_path) as connection:
-        row = connection.execute(
-            "select app_id, name, data_json, recommendation_text from steam_apps"
-        ).fetchone()
+    schema_sql, _ = connection.statements[0]
+    upsert_sql, params = connection.statements[1]
+    stored_json = json.loads(params[-1])
 
-    assert row[0] == 1091500
-    assert row[1] == "Cyberpunk 2077"
-    assert json.loads(row[2])["genres"] == ["RPG"]
-    assert row[3] == game.recommendation_text
+    assert "recommendation_text" not in schema_sql
+    assert "recommendation_text" not in upsert_sql
+    assert "is_free" not in schema_sql
+    assert "is_free" not in upsert_sql
+    assert params[:4] == (1091500, "Cyberpunk 2077", "game", "$59.99")
+    assert stored_json["price"] == "$59.99"
+
+
+def test_load_steam_games_reads_postgres_json_rows():
+    game = fetch_steam_app(
+        1091500,
+        urlopen=lambda request, timeout: FakeResponse(_app_payload()),
+    )
+    connection = FakeConnection(rows=[(game.to_dict(),)])
+
+    games = load_steam_games(
+        "postgresql://example/test",
+        connect=lambda dsn: connection,
+    )
+
+    assert games == [game]
+
+
+def test_load_steam_games_by_app_ids_preserves_requested_order():
+    cyberpunk = fetch_steam_app(
+        1091500,
+        urlopen=lambda request, timeout: FakeResponse(_app_payload()),
+    )
+    hades = cyberpunk.model_copy(update={"app_id": 1145360, "name": "Hades"})
+    connection = FakeConnection(rows=[(hades.to_dict(),), (cyberpunk.to_dict(),)])
+
+    games = load_steam_games_by_app_ids(
+        [1091500, 1145360],
+        "postgresql://example/test",
+        connect=lambda dsn: connection,
+    )
+
+    assert games == [cyberpunk, hades]
 
 
 def _app_payload():
@@ -89,6 +132,7 @@ def _app_payload():
                 "name": "Cyberpunk 2077",
                 "steam_appid": 1091500,
                 "is_free": False,
+                "price_overview": {"final_formatted": "$59.99"},
                 "short_description": "Open-world RPG.",
                 "about_the_game": "<p>Become a mercenary.</p>",
                 "developers": ["CD PROJEKT RED"],
@@ -103,3 +147,27 @@ def _app_payload():
             },
         }
     }
+
+
+class FakeConnection:
+    def __init__(self, rows=()):
+        self.rows = list(rows)
+        self.statements = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def execute(self, sql, params=None):
+        self.statements.append((sql, params))
+        return FakeCursor(self.rows)
+
+
+class FakeCursor:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def fetchall(self):
+        return self.rows

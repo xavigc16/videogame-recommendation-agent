@@ -3,6 +3,8 @@ import os
 
 load_dotenv()
 
+POSTGRES_DSN = os.getenv("POSTGRES_DSN")
+
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL") or os.getenv("LLM_URL") or None
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "not-needed")
 AGENT_MODEL = os.getenv("AGENT_MODEL") or os.getenv("OPENAI_MODEL") or os.getenv(

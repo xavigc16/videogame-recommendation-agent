@@ -1,16 +1,16 @@
 import argparse
 import json
-import sqlite3
 from html.parser import HTMLParser
-from pathlib import Path
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen as default_urlopen
 
+import psycopg
+
+from src.config import POSTGRES_DSN
 from src.models.videogame import VideoGame
 
 
 STEAM_APPDETAILS_URL = "https://store.steampowered.com/api/appdetails"
-DEFAULT_DB_PATH = Path("data/steam_games.sqlite3")
 
 
 class SteamStoreError(RuntimeError):
@@ -51,39 +51,80 @@ def fetch_steam_app(
     return _normalize_app(app_id, data, url)
 
 
-def save_steam_app(app: VideoGame, database_path: str | Path = DEFAULT_DB_PATH) -> None:
-    path = Path(database_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    with sqlite3.connect(path) as connection:
+def save_steam_app(
+    app: VideoGame,
+    postgres_dsn: str | None = None,
+    *,
+    connect=psycopg.connect,
+) -> None:
+    with connect(_postgres_dsn(postgres_dsn)) as connection:
+        _ensure_schema(connection)
         connection.execute(
             """
-            create table if not exists steam_apps (
-                app_id integer primary key,
-                name text not null,
-                data_json text not null,
-                recommendation_text text not null,
-                fetched_at text not null default current_timestamp
+            insert into steam_games (
+                app_id, name, type, price, short_description, about_the_game,
+                developers, publishers, genres, categories, platforms, release_date,
+                metacritic_score, recommendation_count, header_image, source_url,
+                data_json
             )
-            """
-        )
-        connection.execute(
-            """
-            insert into steam_apps (app_id, name, data_json, recommendation_text)
-            values (?, ?, ?, ?)
+            values (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                %s::jsonb
+            )
             on conflict(app_id) do update set
                 name = excluded.name,
+                type = excluded.type,
+                price = excluded.price,
+                short_description = excluded.short_description,
+                about_the_game = excluded.about_the_game,
+                developers = excluded.developers,
+                publishers = excluded.publishers,
+                genres = excluded.genres,
+                categories = excluded.categories,
+                platforms = excluded.platforms,
+                release_date = excluded.release_date,
+                metacritic_score = excluded.metacritic_score,
+                recommendation_count = excluded.recommendation_count,
+                header_image = excluded.header_image,
+                source_url = excluded.source_url,
                 data_json = excluded.data_json,
-                recommendation_text = excluded.recommendation_text,
-                fetched_at = current_timestamp
+                fetched_at = now()
             """,
-            (
-                app.app_id,
-                app.name,
-                json.dumps(app.to_dict(), sort_keys=True),
-                app.recommendation_text,
-            ),
+            _game_params(app),
         )
+
+
+def load_steam_games(
+    postgres_dsn: str | None = None,
+    *,
+    connect=psycopg.connect,
+) -> list[VideoGame]:
+    with connect(_postgres_dsn(postgres_dsn)) as connection:
+        rows = connection.execute(
+            "select data_json from steam_games order by app_id"
+        ).fetchall()
+    return [_game_from_json(row[0]) for row in rows]
+
+
+def load_steam_games_by_app_ids(
+    app_ids: list[int],
+    postgres_dsn: str | None = None,
+    *,
+    connect=psycopg.connect,
+) -> list[VideoGame]:
+    if not app_ids:
+        return []
+
+    with connect(_postgres_dsn(postgres_dsn)) as connection:
+        rows = connection.execute(
+            "select data_json from steam_games where app_id = any(%s)",
+            (app_ids,),
+        ).fetchall()
+
+    games_by_id = {
+        game.app_id: game for game in (_game_from_json(row[0]) for row in rows)
+    }
+    return [games_by_id[app_id] for app_id in app_ids if app_id in games_by_id]
 
 
 def _normalize_app(app_id: int, data: dict, source_url: str) -> VideoGame:
@@ -91,7 +132,7 @@ def _normalize_app(app_id: int, data: dict, source_url: str) -> VideoGame:
         app_id=app_id,
         name=data.get("name", ""),
         type=data.get("type", ""),
-        is_free=bool(data.get("is_free", False)),
+        price=_price(data),
         short_description=_clean_html(data.get("short_description", "")),
         about_the_game=_clean_html(data.get("about_the_game", "")),
         developers=list(data.get("developers") or []),
@@ -109,6 +150,77 @@ def _normalize_app(app_id: int, data: dict, source_url: str) -> VideoGame:
     )
 
 
+def _ensure_schema(connection) -> None:
+    connection.execute(
+        """
+        create table if not exists steam_games (
+            app_id integer primary key,
+            name text not null,
+            type text not null,
+            price text,
+            short_description text not null,
+            about_the_game text not null,
+            developers text[] not null default '{}',
+            publishers text[] not null default '{}',
+            genres text[] not null default '{}',
+            categories text[] not null default '{}',
+            platforms text[] not null default '{}',
+            release_date text,
+            metacritic_score integer,
+            recommendation_count integer,
+            header_image text,
+            source_url text not null,
+            data_json jsonb not null,
+            fetched_at timestamptz not null default now()
+        )
+        """
+    )
+
+
+def _game_params(app: VideoGame) -> tuple:
+    return (
+        app.app_id,
+        app.name,
+        app.type,
+        app.price,
+        app.short_description,
+        app.about_the_game,
+        app.developers,
+        app.publishers,
+        app.genres,
+        app.categories,
+        app.platforms,
+        app.release_date,
+        app.metacritic_score,
+        app.recommendation_count,
+        app.header_image,
+        app.source_url,
+        json.dumps(app.to_dict(), sort_keys=True),
+    )
+
+
+def _game_from_json(value: dict | str) -> VideoGame:
+    if isinstance(value, str):
+        return VideoGame.model_validate_json(value)
+    return VideoGame.model_validate(value)
+
+
+def _postgres_dsn(postgres_dsn: str | None) -> str:
+    dsn = postgres_dsn or POSTGRES_DSN
+    if not dsn:
+        raise SteamStoreError("POSTGRES_DSN is not set")
+    return dsn
+
+
+def _price(data: dict) -> str | None:
+    price = data.get("price_overview") or {}
+    if price.get("final_formatted"):
+        return price["final_formatted"]
+    if data.get("is_free"):
+        return "Free"
+    return None
+
+
 def _descriptions(items: list[dict] | None) -> list[str]:
     return [item["description"] for item in items or [] if item.get("description")]
 
@@ -122,12 +234,12 @@ def _clean_html(value: str) -> str:
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("app_id", type=int, nargs="?", default=1091500)
-    parser.add_argument("--db", type=Path)
+    parser.add_argument("--postgres-dsn")
     args = parser.parse_args(argv)
 
     app = fetch_steam_app(args.app_id)
-    if args.db:
-        save_steam_app(app, args.db)
+    if args.postgres_dsn:
+        save_steam_app(app, args.postgres_dsn)
     print(json.dumps(app.to_dict(), indent=2, sort_keys=True))
 
 

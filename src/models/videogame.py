@@ -7,7 +7,7 @@ class VideoGame(BaseModel):
     app_id: int
     name: str
     type: str
-    is_free: bool
+    price: str | None
     short_description: str
     about_the_game: str
     developers: list[str]
