@@ -1,8 +1,11 @@
-from src.agent import agent
 from langchain_core.messages import HumanMessage
+
+from src.agent import agent
+from src.logging_config import configure_logging
 
 
 def run_agent():
+    configure_logging()
     print("--- Video Game Recommendation Agent (Type 'quit' to exit) ---")
     while True:
         user_input = input("User: ")
