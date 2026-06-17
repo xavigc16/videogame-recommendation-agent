@@ -4,22 +4,11 @@ import sqlite3
 from pathlib import Path
 
 from langchain_core.documents import Document
-from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
-from langchain_qdrant import FastEmbedSparse, QdrantVectorStore, RetrievalMode
+from langchain_qdrant import QdrantVectorStore
 
-from src.config import (
-    CONTENT_PAYLOAD_KEY,
-    DENSE_MODEL_NAME,
-    DENSE_VECTOR_NAME,
-    METADATA_PAYLOAD_KEY,
-    QDRANT_API_KEY,
-    QDRANT_COLLECTION_NAME,
-    QDRANT_URL,
-    SPARSE_MODEL_NAME,
-    SPARSE_VECTOR_NAME,
-)
 from src.data_pipeline.steam_store import DEFAULT_DB_PATH
 from src.models.videogame import VideoGame
+from src.qdrant_store import qdrant_vector_store
 
 
 def load_games(database_path: str | Path = DEFAULT_DB_PATH) -> list[VideoGame]:
@@ -55,30 +44,12 @@ def game_to_document(game: VideoGame) -> Document:
     )
 
 
-def build_ingestion_vector_store() -> QdrantVectorStore:
-    dense_embeddings = FastEmbedEmbeddings(model_name=DENSE_MODEL_NAME)
-    sparse_embeddings = FastEmbedSparse(model_name=SPARSE_MODEL_NAME)
-
-    return QdrantVectorStore.from_existing_collection(
-        collection_name=QDRANT_COLLECTION_NAME,
-        embedding=dense_embeddings,
-        sparse_embedding=sparse_embeddings,
-        retrieval_mode=RetrievalMode.HYBRID,
-        url=QDRANT_URL,
-        api_key=QDRANT_API_KEY,
-        vector_name=DENSE_VECTOR_NAME,
-        sparse_vector_name=SPARSE_VECTOR_NAME,
-        content_payload_key=CONTENT_PAYLOAD_KEY,
-        metadata_payload_key=METADATA_PAYLOAD_KEY,
-    )
-
-
 def ingest_sqlite_to_qdrant(
     database_path: str | Path = DEFAULT_DB_PATH,
     vector_store: QdrantVectorStore | None = None,
 ) -> list[str]:
     documents = [game_to_document(game) for game in load_games(database_path)]
-    store = vector_store or build_ingestion_vector_store()
+    store = vector_store or qdrant_vector_store()
     ids = [document.id for document in documents]
     return store.add_documents(documents, ids=ids)
 
