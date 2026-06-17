@@ -20,6 +20,7 @@ Create a `.env` file with the services you use:
 ```bash
 OPENAI_API_KEY=...
 AGENT_MODEL=gpt-4o-mini
+POSTGRES_DSN=postgresql://postgres:postgres@localhost:5432/videogames
 QDRANT_URL=...
 QDRANT_API_KEY=...
 QDRANT_COLLECTION_NAME=video_game_recommendations
@@ -37,6 +38,18 @@ Or start the small interactive loop:
 
 ```bash
 uv run python main.py
+```
+
+Populate Postgres with a Steam app:
+
+```bash
+uv run python -m src.data_pipeline.steam_store 1091500 --postgres-dsn "$POSTGRES_DSN"
+```
+
+Index stored games into Qdrant:
+
+```bash
+uv run python -m src.data_pipeline.qdrant_ingest --postgres-dsn "$POSTGRES_DSN"
 ```
 
 ## Test
