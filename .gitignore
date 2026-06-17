@@ -181,6 +181,7 @@ db.sqlite3-journal
 *.sqlite3-journal
 data/qdrant/*
 !data/qdrant/.gitkeep
+data/postgres/
 
 # Flask stuff:
 instance/
@@ -310,3 +311,6 @@ pyrightconfig.json
 .ionide
 
 # End of https://www.toptal.com/developers/gitignore/api/python,visualstudiocode,pycharm
+
+.codex
+graphify-out/
