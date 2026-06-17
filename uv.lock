@@ -2722,6 +2722,7 @@ dependencies = [
     { name = "langgraph" },
     { name = "pre-commit" },
     { name = "psycopg" },
+    { name = "pydantic" },
     { name = "qdrant-client" },
     { name = "sentence-transformers" },
 ]
@@ -2738,6 +2739,7 @@ requires-dist = [
     { name = "langgraph", specifier = ">=1.1.2" },
     { name = "pre-commit", specifier = ">=4.5.1" },
     { name = "psycopg", specifier = ">=3.3.3" },
+    { name = "pydantic", specifier = ">=2.0" },
     { name = "qdrant-client", specifier = ">=1.15.1" },
     { name = "sentence-transformers", specifier = ">=5.3.0" },
 ]

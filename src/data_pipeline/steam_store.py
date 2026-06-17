@@ -1,11 +1,12 @@
 import argparse
 import json
 import sqlite3
-from dataclasses import asdict, dataclass
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen as default_urlopen
+
+from src.models.videogame import VideoGame
 
 
 STEAM_APPDETAILS_URL = "https://store.steampowered.com/api/appdetails"
@@ -27,48 +28,10 @@ class _TextExtractor(HTMLParser):
             self.parts.append(text)
 
 
-@dataclass(frozen=True)
-class SteamApp:
-    app_id: int
-    name: str
-    type: str
-    is_free: bool
-    short_description: str
-    about_the_game: str
-    developers: list[str]
-    publishers: list[str]
-    genres: list[str]
-    categories: list[str]
-    platforms: list[str]
-    release_date: str | None
-    metacritic_score: int | None
-    recommendation_count: int | None
-    header_image: str | None
-    source_url: str
-
-    @property
-    def recommendation_text(self) -> str:
-        parts = [f"{self.name} is a {self.type}"]
-        if self.developers:
-            parts.append(f"from {', '.join(self.developers)}")
-
-        text = " ".join(parts) + "."
-        if self.genres:
-            text += f" Genres: {', '.join(self.genres)}."
-        if self.categories:
-            text += f" Categories: {', '.join(self.categories)}."
-        if self.short_description:
-            text += f" {self.short_description}"
-        if self.about_the_game:
-            text += f" {self.about_the_game}"
-        return text
-
-    def to_dict(self) -> dict:
-        return asdict(self)
-
-
-def fetch_steam_app(app_id: int, *, timeout: int = 10, urlopen=default_urlopen) -> SteamApp:
-    query = urlencode({"appids": app_id})
+def fetch_steam_app(
+    app_id: int, *, timeout: int = 10, urlopen=default_urlopen
+) -> VideoGame:
+    query = urlencode({"appids": app_id, "l": "english", "cc": "us"})
     url = f"{STEAM_APPDETAILS_URL}?{query}"
     request = Request(
         url,
@@ -88,7 +51,7 @@ def fetch_steam_app(app_id: int, *, timeout: int = 10, urlopen=default_urlopen) 
     return _normalize_app(app_id, data, url)
 
 
-def save_steam_app(app: SteamApp, database_path: str | Path = DEFAULT_DB_PATH) -> None:
+def save_steam_app(app: VideoGame, database_path: str | Path = DEFAULT_DB_PATH) -> None:
     path = Path(database_path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -123,8 +86,8 @@ def save_steam_app(app: SteamApp, database_path: str | Path = DEFAULT_DB_PATH) -
         )
 
 
-def _normalize_app(app_id: int, data: dict, source_url: str) -> SteamApp:
-    return SteamApp(
+def _normalize_app(app_id: int, data: dict, source_url: str) -> VideoGame:
+    return VideoGame(
         app_id=app_id,
         name=data.get("name", ""),
         type=data.get("type", ""),

@@ -19,6 +19,8 @@ class FakeResponse:
 def test_fetch_steam_app_normalizes_store_response():
     def fake_urlopen(request, timeout):
         assert "appids=1091500" in request.full_url
+        assert "l=english" in request.full_url
+        assert "cc=us" in request.full_url
         assert timeout == 10
         return FakeResponse(
             {
