@@ -11,6 +11,7 @@ from src.agent import (
     RouteDecision,
     ask_agent,
     ask_agent_with_payload,
+    agent_info_node,
     game_details_node,
     out_of_scope_node,
     recommendation_node,
@@ -25,6 +26,7 @@ from tests.test_steam_store import FakeResponse, _app_payload
 
 def test_agent_routes_recommendations_and_game_details():
     assert "out_of_scope" in ROUTER_PROMPT
+    assert "agent_info" in ROUTER_PROMPT
     assert "game_details" in ROUTER_PROMPT
     assert "recommendation" in ROUTER_PROMPT
     assert "retrieved recommendation evidence" in RECOMMENDATION_PROMPT
@@ -69,8 +71,22 @@ def test_route_intent_records_router_decision(caplog, monkeypatch):
     assert "Agent routed intent: game_details" in caplog.text
 
 
+def test_classify_intent_routes_greetings_without_model(monkeypatch):
+    import src.agent as agent_module
+
+    monkeypatch.setattr(
+        agent_module,
+        "router_model",
+        SimpleNamespace(invoke=lambda messages: (_ for _ in ()).throw(AssertionError())),
+    )
+
+    assert agent_module._classify_intent("hello").intent == "agent_info"
+    assert agent_module._classify_intent("What can you do?").intent == "agent_info"
+
+
 def test_route_by_intent_selects_answer_node():
     assert route_by_intent({"intent": "out_of_scope"}) == "out_of_scope_node"
+    assert route_by_intent({"intent": "agent_info"}) == "agent_info_node"
     assert route_by_intent({"intent": "game_details"}) == "game_details_node"
     assert route_by_intent({"intent": "recommendation"}) == "recommendation_node"
 
@@ -215,6 +231,17 @@ def test_out_of_scope_node_redirects_without_payload():
 
     assert result["frontend_payload"] is None
     assert "only answer video game" in result["messages"][0].content
+
+
+def test_agent_info_node_describes_capabilities():
+    for query, greets in [("Hi there", True), ("What can you do?", False)]:
+        result = agent_info_node({"messages": [HumanMessage(content=query)]})
+        content = result["messages"][0].content
+
+        assert result["frontend_payload"] is None
+        assert content.startswith("Hi.") is greets
+        assert "recommend video games" in content
+        assert "details about a specific game" in content
 
 
 def test_game_details_node_returns_answer_and_payload(monkeypatch):

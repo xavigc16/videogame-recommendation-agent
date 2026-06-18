@@ -18,6 +18,7 @@ ROUTER_PROMPT = """Classify the user's request.
 
 Return:
 - out_of_scope: not about video games.
+- agent_info: greets the assistant or asks what this assistant can do.
 - game_details: asks for factual information, metadata, or frontend-ready details about one exact game name.
 - recommendation: asks what to play, similar games, fit, taste, or comparison.
 
@@ -47,7 +48,7 @@ model = ChatOpenAI(
 
 
 class RouteDecision(BaseModel):
-    intent: Literal["out_of_scope", "game_details", "recommendation"]
+    intent: Literal["out_of_scope", "agent_info", "game_details", "recommendation"]
     game_name: str | None = None
     query: str | None = None
 
@@ -77,6 +78,13 @@ def route_intent(state: MessagesState) -> dict:
 
 
 def _classify_intent(query: str) -> RouteDecision:
+    normalized_query = query.strip().lower().strip("!?., ")
+    if normalized_query.startswith(("hi", "hello", "hey")) or normalized_query in {
+        "help",
+        "what can you do",
+        "who are you",
+    }:
+        return RouteDecision(intent="agent_info")
     return router_model.invoke(
         [SystemMessage(content=ROUTER_PROMPT), HumanMessage(content=query)]
     )
@@ -84,8 +92,12 @@ def _classify_intent(query: str) -> RouteDecision:
 
 def route_by_intent(
     state: MessagesState,
-) -> Literal["out_of_scope_node", "game_details_node", "recommendation_node"]:
+) -> Literal[
+    "out_of_scope_node", "agent_info_node", "game_details_node", "recommendation_node"
+]:
     intent = state.get("intent")
+    if intent == "agent_info":
+        return "agent_info_node"
     if intent == "game_details":
         return "game_details_node"
     if intent == "recommendation":
@@ -99,6 +111,20 @@ def out_of_scope_node(state: MessagesState) -> dict:
         content="I only answer video game recommendation or game detail questions."
     )
     logger.info("Agent graph exiting node: out_of_scope_node")
+    return {"messages": [message], "frontend_payload": None}
+
+
+def agent_info_node(state: MessagesState) -> dict:
+    logger.info("Agent graph entering node: agent_info_node")
+    user_text = _last_user_text(state).strip().lower()
+    prefix = "Hi. " if user_text.startswith(("hi", "hello", "hey")) else ""
+    message = AIMessage(
+        content=(
+            f"{prefix}I can recommend video games from retrieved evidence and give "
+            "details about a specific game in the recommendation database."
+        )
+    )
+    logger.info("Agent graph exiting node: agent_info_node")
     return {"messages": [message], "frontend_payload": None}
 
 
@@ -145,6 +171,7 @@ agent_builder = StateGraph(MessagesState)
 
 agent_builder.add_node("route_intent", route_intent)
 agent_builder.add_node("out_of_scope_node", out_of_scope_node)
+agent_builder.add_node("agent_info_node", agent_info_node)
 agent_builder.add_node("game_details_node", game_details_node)
 agent_builder.add_node("recommendation_node", recommendation_node)
 
@@ -154,6 +181,7 @@ agent_builder.add_conditional_edges(
     route_by_intent,
 )
 agent_builder.add_edge("out_of_scope_node", END)
+agent_builder.add_edge("agent_info_node", END)
 agent_builder.add_edge("game_details_node", END)
 agent_builder.add_edge("recommendation_node", END)
 agent = agent_builder.compile()
