@@ -10,6 +10,13 @@ services:
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
 
+  adminer:
+    image: adminer:latest
+    depends_on:
+      - postgres
+    ports:
+      - "8080:8080"
+
   qdrant:
     image: qdrant/qdrant:latest
     ports:
