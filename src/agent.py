@@ -1,28 +1,33 @@
+import json
 import logging
 from typing import Literal
 
+from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import AnyMessage, HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
-from langgraph.prebuilt import ToolNode
-from typing_extensions import Annotated, TypedDict
+from pydantic import BaseModel
+from typing_extensions import Annotated, NotRequired, TypedDict
 
 from src.config import AGENT_MODEL, OPENAI_API_KEY, OPENAI_BASE_URL
-from src.tools import tools
+from src.tools import get_game_details, search_game_recommendations
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """You are a video game recommendation assistant backed by retrieval.
+ROUTER_PROMPT = """Classify the user's request.
 
-Scope:
-- Only answer questions about video game recommendations, what to play next, game fit, similar games, or taste-based comparisons.
-- If the user asks about anything else, refuse briefly and say you only answer video game recommendation questions.
-- If the user asks a factual video game question that is not useful for recommending games, refuse briefly.
+Return:
+- out_of_scope: not about video games.
+- game_details: asks for factual information, metadata, or frontend-ready details about one exact game name.
+- recommendation: asks what to play, similar games, fit, taste, or comparison.
 
-Retrieval:
-- For every in-scope question, call the search_game_recommendations tool before answering.
-- Base your answer only on the retrieved recommendation evidence.
+For game_details, set game_name to the exact game name from the user.
+For recommendation, set query to the user's full request.
+"""
+
+RECOMMENDATION_PROMPT = """You are a video game recommendation assistant.
+
+- Base recommendation answers only on retrieved recommendation evidence.
 - If the retrieved evidence does not contain enough useful information for the user's tastes or requested game, say that the recommendation database does not contain enough relevant information.
 - Do not invent scores, sources, availability, platforms, or details that are absent from the retrieved evidence.
 
@@ -38,89 +43,138 @@ model = ChatOpenAI(
     temperature=0,
     base_url=OPENAI_BASE_URL,
     api_key=OPENAI_API_KEY,
-).bind_tools(tools)
+)
+
+
+class RouteDecision(BaseModel):
+    intent: Literal["out_of_scope", "game_details", "recommendation"]
+    game_name: str | None = None
+    query: str | None = None
+
+
+router_model = model.with_structured_output(RouteDecision)
 
 
 class MessagesState(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
-    llm_calls: int
+    intent: NotRequired[str]
+    query: NotRequired[str]
+    game_name: NotRequired[str]
+    frontend_payload: NotRequired[dict | None]
 
 
-def _tool_call_names(message: AnyMessage) -> list[str]:
-    tool_calls = getattr(message, "tool_calls", None) or []
-    names = []
-    for tool_call in tool_calls:
-        if isinstance(tool_call, dict):
-            names.append(tool_call.get("name", "unknown_tool"))
-        else:
-            names.append(getattr(tool_call, "name", "unknown_tool"))
-    return names
-
-
-def llm_call(state: MessagesState):
-    """LLM decides whether to call a tool or reply to the user"""
-    current_call = state.get("llm_calls", 0) + 1
-    logger.info("Agent graph entering node: llm_call (call=%s)", current_call)
-    response = model.invoke([SystemMessage(content=SYSTEM_PROMPT)] + state["messages"])
-    tool_names = _tool_call_names(response)
-    if tool_names:
-        logger.info("LLM requested tool calls: %s", ", ".join(tool_names))
-    else:
-        logger.info("LLM returned final response with no tool calls")
-    logger.info("Agent graph exiting node: llm_call (call=%s)", current_call)
-
+def route_intent(state: MessagesState) -> dict:
+    query = _last_user_text(state)
+    logger.info("Agent graph entering node: route_intent")
+    decision = _classify_intent(query)
+    logger.info("Agent routed intent: %s", decision.intent)
+    logger.info("Agent graph exiting node: route_intent")
     return {
-        "messages": [response],
-        "llm_calls": current_call,
+        "intent": decision.intent,
+        "query": decision.query or query,
+        "game_name": decision.game_name,
     }
 
 
-def should_continue(state: MessagesState) -> Literal["tool_node", END]:
-    """Decide if we should continue the loop or stop based upon whether the LLM made a tool call"""
-    last_message = state["messages"][-1]
-    tool_names = _tool_call_names(last_message)
-    if tool_names and state.get("llm_calls", 0) < 3:
-        logger.info("Agent graph routing from llm_call to tool_node")
-        return "tool_node"
-
-    if tool_names:
-        logger.info("Agent graph routing from llm_call to END after reaching call limit")
-    else:
-        logger.info("Agent graph routing from llm_call to END")
-    return END
+def _classify_intent(query: str) -> RouteDecision:
+    return router_model.invoke(
+        [SystemMessage(content=ROUTER_PROMPT), HumanMessage(content=query)]
+    )
 
 
-tool_node = ToolNode(tools)
+def route_by_intent(
+    state: MessagesState,
+) -> Literal["out_of_scope_node", "game_details_node", "recommendation_node"]:
+    intent = state.get("intent")
+    if intent == "game_details":
+        return "game_details_node"
+    if intent == "recommendation":
+        return "recommendation_node"
+    return "out_of_scope_node"
 
 
-def run_tool_node(state: MessagesState):
-    """Run tools while logging graph movement through the tool node."""
-    logger.info("Agent graph entering node: tool_node")
-    result = tool_node.invoke(state)
-    logger.info("Agent graph exiting node: tool_node")
-    return result
+def out_of_scope_node(state: MessagesState) -> dict:
+    logger.info("Agent graph entering node: out_of_scope_node")
+    message = AIMessage(
+        content="I only answer video game recommendation or game detail questions."
+    )
+    logger.info("Agent graph exiting node: out_of_scope_node")
+    return {"messages": [message], "frontend_payload": None}
+
+
+def game_details_node(state: MessagesState) -> dict:
+    logger.info("Agent graph entering node: game_details_node")
+    game_name = state.get("game_name") or state.get("query") or _last_user_text(state)
+    result = json.loads(get_game_details.invoke({"game_name": game_name}))
+    payload = result.get("frontend_payload")
+    logger.info("Agent graph exiting node: game_details_node")
+    return {
+        "messages": [AIMessage(content=_game_details_answer(result))],
+        "frontend_payload": payload,
+    }
+
+
+def recommendation_node(state: MessagesState) -> dict:
+    logger.info("Agent graph entering node: recommendation_node")
+    query = state.get("query") or _last_user_text(state)
+    evidence = search_game_recommendations.invoke({"query": query})
+    answer = _answer_recommendation(query, evidence)
+    logger.info("Agent graph exiting node: recommendation_node")
+    return {"messages": [AIMessage(content=answer)], "frontend_payload": None}
+
+
+def _answer_recommendation(query: str, evidence: str) -> str:
+    response = model.invoke(
+        [
+            SystemMessage(content=RECOMMENDATION_PROMPT),
+            HumanMessage(content=f"User request: {query}\n\nEvidence:\n{evidence}"),
+        ]
+    )
+    return str(response.content)
+
+
+def _game_details_answer(result: dict) -> str:
+    return result.get("message", "Game not found.")
+
+
+def _last_user_text(state: MessagesState) -> str:
+    return str(state["messages"][-1].content)
 
 
 agent_builder = StateGraph(MessagesState)
 
-agent_builder.add_node("llm_call", llm_call)
-agent_builder.add_node("tool_node", run_tool_node)
+agent_builder.add_node("route_intent", route_intent)
+agent_builder.add_node("out_of_scope_node", out_of_scope_node)
+agent_builder.add_node("game_details_node", game_details_node)
+agent_builder.add_node("recommendation_node", recommendation_node)
 
-agent_builder.add_edge(START, "llm_call")
+agent_builder.add_edge(START, "route_intent")
 agent_builder.add_conditional_edges(
-    "llm_call",
-    should_continue,
+    "route_intent",
+    route_by_intent,
 )
-agent_builder.add_edge("tool_node", "llm_call")
+agent_builder.add_edge("out_of_scope_node", END)
+agent_builder.add_edge("game_details_node", END)
+agent_builder.add_edge("recommendation_node", END)
 agent = agent_builder.compile()
 app = agent
 
 
 def ask_agent(query: str) -> str:
     """Invoke the recommendation agent and return the final answer text."""
-    result = agent.invoke({"messages": [HumanMessage(content=query)], "llm_calls": 0})
+    result = agent.invoke({"messages": [HumanMessage(content=query)]})
     logger.info("Finished agent invocation")
     return result["messages"][-1].content
+
+
+def ask_agent_with_payload(query: str) -> dict:
+    """Invoke the agent and return answer text plus any frontend payload."""
+    result = agent.invoke({"messages": [HumanMessage(content=query)]})
+    logger.info("Finished agent invocation")
+    return {
+        "answer": result["messages"][-1].content,
+        "frontend_payload": result.get("frontend_payload"),
+    }
 
 
 if __name__ == "__main__":
