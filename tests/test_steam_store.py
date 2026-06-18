@@ -5,6 +5,7 @@ from src.data_pipeline.steam_store import (
     fetch_steam_app,
     load_steam_games,
     load_steam_games_by_app_ids,
+    load_steam_games_by_name,
     save_steam_app,
 )
 
@@ -121,6 +122,25 @@ def test_load_steam_games_by_app_ids_preserves_requested_order():
     )
 
     assert games == [cyberpunk, hades]
+
+
+def test_load_steam_games_by_name_matches_exact_name_case_insensitively():
+    game = fetch_steam_app(
+        1091500,
+        urlopen=lambda request, timeout: FakeResponse(_app_payload()),
+    )
+    connection = FakeConnection(rows=[(game.to_dict(),)])
+
+    games = load_steam_games_by_name(
+        "cyberpunk 2077",
+        "postgresql://example/test",
+        connect=lambda dsn: connection,
+    )
+
+    sql, params = connection.statements[0]
+    assert "lower(name) = lower(%s)" in sql
+    assert params == ("cyberpunk 2077",)
+    assert games == [game]
 
 
 def _app_payload():

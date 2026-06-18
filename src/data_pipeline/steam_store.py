@@ -127,6 +127,20 @@ def load_steam_games_by_app_ids(
     return [games_by_id[app_id] for app_id in app_ids if app_id in games_by_id]
 
 
+def load_steam_games_by_name(
+    name: str,
+    postgres_dsn: str | None = None,
+    *,
+    connect=psycopg.connect,
+) -> list[VideoGame]:
+    with connect(_postgres_dsn(postgres_dsn)) as connection:
+        rows = connection.execute(
+            "select data_json from steam_games where lower(name) = lower(%s) order by app_id",
+            (name,),
+        ).fetchall()
+    return [_game_from_json(row[0]) for row in rows]
+
+
 def _normalize_app(app_id: int, data: dict, source_url: str) -> VideoGame:
     return VideoGame(
         app_id=app_id,
@@ -148,7 +162,7 @@ def _normalize_app(app_id: int, data: dict, source_url: str) -> VideoGame:
         recommendation_count=(data.get("recommendations") or {}).get("total"),
         header_image=data.get("header_image"),
         source_url=source_url,
-        )
+    )
 
 
 def _game_params(app: VideoGame) -> tuple:
