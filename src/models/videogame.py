@@ -13,6 +13,7 @@ class VideoGame(BaseModel):
     developers: list[str]
     publishers: list[str]
     genres: list[str]
+    tags: list[str]
     categories: list[str]
     platforms: list[str]
     release_date: str | None

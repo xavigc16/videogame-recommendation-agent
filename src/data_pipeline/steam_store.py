@@ -58,18 +58,17 @@ def save_steam_app(
     connect=psycopg.connect,
 ) -> None:
     with connect(_postgres_dsn(postgres_dsn)) as connection:
-        _ensure_schema(connection)
         connection.execute(
             """
             insert into steam_games (
                 app_id, name, type, price, short_description, about_the_game,
-                developers, publishers, genres, categories, platforms, release_date,
-                metacritic_score, recommendation_count, header_image, source_url,
-                data_json
+                developers, publishers, genres, tags, categories, platforms,
+                release_date, metacritic_score, recommendation_count, header_image,
+                source_url, data_json
             )
             values (
                 %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                %s::jsonb
+                %s, %s::jsonb
             )
             on conflict(app_id) do update set
                 name = excluded.name,
@@ -80,6 +79,7 @@ def save_steam_app(
                 developers = excluded.developers,
                 publishers = excluded.publishers,
                 genres = excluded.genres,
+                tags = excluded.tags,
                 categories = excluded.categories,
                 platforms = excluded.platforms,
                 release_date = excluded.release_date,
@@ -138,6 +138,7 @@ def _normalize_app(app_id: int, data: dict, source_url: str) -> VideoGame:
         developers=list(data.get("developers") or []),
         publishers=list(data.get("publishers") or []),
         genres=_descriptions(data.get("genres")),
+        tags=_descriptions(data.get("tags")),
         categories=_descriptions(data.get("categories")),
         platforms=[
             name for name, enabled in (data.get("platforms") or {}).items() if enabled
@@ -147,34 +148,7 @@ def _normalize_app(app_id: int, data: dict, source_url: str) -> VideoGame:
         recommendation_count=(data.get("recommendations") or {}).get("total"),
         header_image=data.get("header_image"),
         source_url=source_url,
-    )
-
-
-def _ensure_schema(connection) -> None:
-    connection.execute(
-        """
-        create table if not exists steam_games (
-            app_id integer primary key,
-            name text not null,
-            type text not null,
-            price text,
-            short_description text not null,
-            about_the_game text not null,
-            developers text[] not null default '{}',
-            publishers text[] not null default '{}',
-            genres text[] not null default '{}',
-            categories text[] not null default '{}',
-            platforms text[] not null default '{}',
-            release_date text,
-            metacritic_score integer,
-            recommendation_count integer,
-            header_image text,
-            source_url text not null,
-            data_json jsonb not null,
-            fetched_at timestamptz not null default now()
         )
-        """
-    )
 
 
 def _game_params(app: VideoGame) -> tuple:
@@ -188,6 +162,7 @@ def _game_params(app: VideoGame) -> tuple:
         app.developers,
         app.publishers,
         app.genres,
+        app.tags,
         app.categories,
         app.platforms,
         app.release_date,

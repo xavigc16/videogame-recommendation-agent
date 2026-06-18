@@ -81,13 +81,10 @@ def test_save_steam_app_upserts_postgres_row_without_search_text():
         connect=lambda dsn: connection,
     )
 
-    schema_sql, _ = connection.statements[0]
-    upsert_sql, params = connection.statements[1]
+    upsert_sql, params = connection.statements[0]
     stored_json = json.loads(params[-1])
 
-    assert "recommendation_text" not in schema_sql
     assert "recommendation_text" not in upsert_sql
-    assert "is_free" not in schema_sql
     assert "is_free" not in upsert_sql
     assert params[:4] == (1091500, "Cyberpunk 2077", "game", "$59.99")
     assert stored_json["price"] == "$59.99"

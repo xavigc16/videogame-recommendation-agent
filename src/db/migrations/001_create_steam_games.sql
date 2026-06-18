@@ -1,0 +1,21 @@
+create table if not exists steam_games (
+    app_id integer primary key,
+    name text not null,
+    type text not null,
+    price text,
+    short_description text not null,
+    about_the_game text not null,
+    developers text[] not null default '{}',
+    publishers text[] not null default '{}',
+    genres text[] not null default '{}',
+    tags text[] not null default '{}',
+    categories text[] not null default '{}',
+    platforms text[] not null default '{}',
+    release_date text,
+    metacritic_score integer,
+    recommendation_count integer,
+    header_image text,
+    source_url text not null,
+    data_json jsonb not null,
+    fetched_at timestamptz not null default now()
+);

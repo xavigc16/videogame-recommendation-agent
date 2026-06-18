@@ -26,6 +26,7 @@ def game_to_document(game: VideoGame) -> Document:
             "developers": game.developers,
             "publishers": game.publishers,
             "genres": game.genres,
+            "tags": game.tags,
             "categories": game.categories,
             "platforms": game.platforms,
             "price": game.price,
