@@ -29,6 +29,7 @@ def test_game_to_document_builds_recommendation_document():
         "developers": ["CD PROJEKT RED"],
         "publishers": ["CD PROJEKT RED"],
         "genres": ["RPG"],
+        "tags": ["Open World", "Cyberpunk"],
         "categories": ["Single-player"],
         "platforms": ["windows"],
         "price": "$59.99",

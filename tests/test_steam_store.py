@@ -41,6 +41,7 @@ def test_fetch_steam_app_normalizes_store_response():
                         "developers": ["CD PROJEKT RED"],
                         "publishers": ["CD PROJEKT RED"],
                         "genres": [{"description": "RPG"}],
+                        "tags": [{"description": "Open World"}, {"description": "Cyberpunk"}],
                         "categories": [{"description": "Single-player"}],
                         "platforms": {"windows": True, "mac": False, "linux": False},
                         "release_date": {"date": "10 Dec, 2020"},
@@ -58,6 +59,7 @@ def test_fetch_steam_app_normalizes_store_response():
     assert game.name == "Cyberpunk 2077"
     assert game.price == "$59.99"
     assert game.genres == ["RPG"]
+    assert game.tags == ["Open World", "Cyberpunk"]
     assert game.categories == ["Single-player"]
     assert game.platforms == ["windows"]
     assert game.recommendation_text == (
@@ -89,6 +91,7 @@ def test_save_steam_app_upserts_postgres_row_without_search_text():
     assert "is_free" not in upsert_sql
     assert params[:4] == (1091500, "Cyberpunk 2077", "game", "$59.99")
     assert stored_json["price"] == "$59.99"
+    assert stored_json["tags"] == ["Open World", "Cyberpunk"]
 
 
 def test_load_steam_games_reads_postgres_json_rows():
@@ -138,6 +141,7 @@ def _app_payload():
                 "developers": ["CD PROJEKT RED"],
                 "publishers": ["CD PROJEKT RED"],
                 "genres": [{"description": "RPG"}],
+                "tags": [{"description": "Open World"}, {"description": "Cyberpunk"}],
                 "categories": [{"description": "Single-player"}],
                 "platforms": {"windows": True, "mac": False, "linux": False},
                 "release_date": {"date": "10 Dec, 2020"},

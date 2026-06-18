@@ -12,6 +12,7 @@ def test_videogame_builds_recommendation_text():
         developers=["CD PROJEKT RED"],
         publishers=["CD PROJEKT RED"],
         genres=["RPG"],
+        tags=["Open World", "Cyberpunk"],
         categories=["Single-player"],
         platforms=["windows"],
         release_date="10 Dec, 2020",
