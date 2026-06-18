@@ -40,6 +40,12 @@ Or start the small interactive loop:
 uv run python main.py
 ```
 
+Run the Chainlit visualizer:
+
+```bash
+DEBUG=false uv run chainlit run chainlit_app.py --host 0.0.0.0 --port 8000
+```
+
 Populate Postgres with a Steam app:
 
 ```bash
