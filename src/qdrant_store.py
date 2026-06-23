@@ -20,6 +20,21 @@ logger = logging.getLogger(__name__)
 
 
 def _build_qdrant_vector_store() -> QdrantVectorStore:
+    settings = (
+        ("QDRANT_URL", QDRANT_URL),
+        ("QDRANT_COLLECTION_NAME", QDRANT_COLLECTION_NAME),
+        ("DENSE_MODEL_NAME", DENSE_MODEL_NAME),
+        ("SPARSE_MODEL_NAME", SPARSE_MODEL_NAME),
+        ("DENSE_VECTOR_NAME", DENSE_VECTOR_NAME),
+        ("SPARSE_VECTOR_NAME", SPARSE_VECTOR_NAME),
+        ("CONTENT_PAYLOAD_KEY", CONTENT_PAYLOAD_KEY),
+        ("METADATA_PAYLOAD_KEY", METADATA_PAYLOAD_KEY),
+    )
+    missing = [name for name, value in settings if not value]
+    if missing:
+        names = ", ".join(missing)
+        raise RuntimeError(f"Missing required Qdrant environment values: {names}")
+
     logger.info("Connecting to Qdrant collection '%s'", QDRANT_COLLECTION_NAME)
     dense_embeddings = FastEmbedEmbeddings(model_name=DENSE_MODEL_NAME)
     sparse_embeddings = FastEmbedSparse(model_name=SPARSE_MODEL_NAME)

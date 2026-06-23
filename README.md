@@ -18,15 +18,13 @@ uv sync
 Create a `.env` file with the services you use:
 
 ```bash
-OPENAI_API_KEY=...
-AGENT_MODEL=gpt-4o-mini
-POSTGRES_DSN=postgresql://postgres:postgres@localhost:5432/videogames
-QDRANT_URL=...
-QDRANT_API_KEY=...
-QDRANT_COLLECTION_NAME=video_game_recommendations
+cp .env.template .env
 ```
 
-`OPENAI_BASE_URL` is optional if you use a compatible local or hosted endpoint.
+Set the values for your environment. Qdrant connection, collection, embedding,
+vector, and payload settings are required and must match the existing collection
+schema. `QDRANT_API_KEY` may be empty for local Qdrant. `OPENAI_BASE_URL` is
+optional if you use a compatible local or hosted endpoint.
 
 ## Run
 
@@ -44,6 +42,12 @@ Run the Chainlit visualizer:
 
 ```bash
 DEBUG=false uv run chainlit run chainlit_app.py --host 0.0.0.0 --port 8000
+```
+
+Apply PostgreSQL migrations:
+
+```bash
+uv run python -m src.db.migrate
 ```
 
 Populate Postgres with a Steam app:
