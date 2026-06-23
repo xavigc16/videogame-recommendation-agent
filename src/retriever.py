@@ -1,51 +1,21 @@
 import logging
 
 from langchain_core.documents import Document
-from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
 from langchain_core.vectorstores import VectorStoreRetriever
-from langchain_qdrant import FastEmbedSparse, QdrantVectorStore, RetrievalMode
 
 from src.config import (
-    CONTENT_PAYLOAD_KEY,
-    DENSE_MODEL_NAME,
-    DENSE_VECTOR_NAME,
     LOG_RETRIEVED_CONTENT_MAX_CHARS,
-    METADATA_PAYLOAD_KEY,
-    QDRANT_API_KEY,
-    QDRANT_COLLECTION_NAME,
-    QDRANT_URL,
     RETRIEVER_K,
-    SPARSE_MODEL_NAME,
-    SPARSE_VECTOR_NAME,
 )
+from src.qdrant_store import qdrant_vector_store
 
 logger = logging.getLogger(__name__)
-
-
-def build_vector_store() -> QdrantVectorStore:
-    """Connect to an existing Qdrant collection containing recommendation evidence."""
-    logger.info("Connecting to Qdrant collection '%s'", QDRANT_COLLECTION_NAME)
-    dense_embeddings = FastEmbedEmbeddings(model_name=DENSE_MODEL_NAME)
-    sparse_embeddings = FastEmbedSparse(model_name=SPARSE_MODEL_NAME)
-
-    return QdrantVectorStore.from_existing_collection(
-        collection_name=QDRANT_COLLECTION_NAME,
-        embedding=dense_embeddings,
-        sparse_embedding=sparse_embeddings,
-        retrieval_mode=RetrievalMode.HYBRID,
-        url=QDRANT_URL,
-        api_key=QDRANT_API_KEY,
-        vector_name=DENSE_VECTOR_NAME,
-        sparse_vector_name=SPARSE_VECTOR_NAME,
-        content_payload_key=CONTENT_PAYLOAD_KEY,
-        metadata_payload_key=METADATA_PAYLOAD_KEY,
-    )
 
 
 def build_recommendation_retriever(k: int = RETRIEVER_K) -> VectorStoreRetriever:
     """Return a LangChain retriever over the game recommendation collection."""
     logger.info("Building Qdrant recommendation retriever (k=%s)", k)
-    return build_vector_store().as_retriever(search_kwargs={"k": k})
+    return qdrant_vector_store().as_retriever(search_kwargs={"k": k})
 
 
 def _truncate_content(content: str) -> str:
