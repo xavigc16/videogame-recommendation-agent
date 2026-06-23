@@ -56,6 +56,17 @@ Populate Postgres with a Steam app:
 uv run python -m src.data_pipeline.steam_store 1091500 --postgres-dsn "$POSTGRES_DSN"
 ```
 
+Import one English Eurogamer review by the exact stored game name:
+
+```bash
+uv run python -m src.data_pipeline.review_ingest "Hades" --publisher eurogamer --postgres-dsn "$POSTGRES_DSN"
+```
+
+The importer finds the review through Eurogamer's yearly sitemaps around the
+stored Steam release year, saves the original paragraphs in PostgreSQL, and
+upserts overlapping, context-augmented chunks into Qdrant. Each point records
+its review ID, publisher, zero-based chunk index, and total chunk count.
+
 Index stored games into Qdrant:
 
 ```bash
