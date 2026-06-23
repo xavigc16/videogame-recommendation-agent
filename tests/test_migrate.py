@@ -1,4 +1,14 @@
+from pathlib import Path
+
 from src.db import migrate as migrate_module
+
+
+def test_tags_are_added_by_a_forward_migration():
+    migration = Path("src/db/migrations/002_add_steam_game_tags.sql")
+
+    assert migration.read_text(encoding="utf-8").strip() == (
+        "alter table steam_games add column if not exists tags text[] not null default '{}';"
+    )
 
 
 def test_migrate_applies_unseen_sql_files_in_order(tmp_path, monkeypatch):
