@@ -122,19 +122,19 @@ def test_search_game_recommendations_logs_query_and_result_count(caplog, monkeyp
         )
     ]
 
-    class FakeRetriever:
-        search_kwargs = {"k": 1}
+    def retrieve(query):
+        assert query == "games like Hades"
+        return documents
 
-        def invoke(self, query):
-            assert query == "games like Hades"
-            return documents
-
-    monkeypatch.setattr(tools_module, "_recommendation_retriever", lambda: FakeRetriever())
+    monkeypatch.setattr(
+        tools_module,
+        "retrieve_recommendation_documents",
+        retrieve,
+    )
 
     with caplog.at_level(logging.DEBUG):
         result = tools_module.search_game_recommendations.invoke({"query": "games like Hades"})
 
-    assert "Searching Qdrant recommendation evidence (k=1)" in caplog.text
     assert "Qdrant retrieval query: games like Hades" in caplog.text
     assert "Retrieved 1 recommendation evidence fragments from Qdrant" in caplog.text
     assert "Players praise the combat and progression." in result
@@ -152,17 +152,18 @@ def test_search_game_recommendations_retries_after_qdrant_failure(monkeypatch):
     attempts = []
     resets = []
 
-    class FakeRetriever:
-        search_kwargs = {"k": 1}
+    def retrieve(query):
+        assert query == "games like Hades"
+        attempts.append(query)
+        if len(attempts) == 1:
+            raise RuntimeError("closed connection")
+        return documents
 
-        def invoke(self, query):
-            assert query == "games like Hades"
-            attempts.append(query)
-            if len(attempts) == 1:
-                raise RuntimeError("closed connection")
-            return documents
-
-    monkeypatch.setattr(tools_module, "_recommendation_retriever", FakeRetriever)
+    monkeypatch.setattr(
+        tools_module,
+        "retrieve_recommendation_documents",
+        retrieve,
+    )
     monkeypatch.setattr(
         tools_module, "reset_qdrant_vector_store", lambda: resets.append(True)
     )

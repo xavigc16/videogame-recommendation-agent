@@ -6,16 +6,12 @@ from langchain.tools import tool
 from src.data_pipeline.steam_store import load_steam_games_by_name
 from src.qdrant_store import reset_qdrant_vector_store
 from src.retriever import (
-    build_recommendation_retriever,
     format_recommendation_documents,
     log_retrieved_documents,
+    retrieve_recommendation_documents,
 )
 
 logger = logging.getLogger(__name__)
-
-
-def _recommendation_retriever():
-    return build_recommendation_retriever()
 
 
 @tool
@@ -27,12 +23,9 @@ def search_game_recommendations(query: str) -> str:
     genre/platform preferences, strengths and weaknesses, or whether a game fits
     the user's taste. Do not use this for non-video-game questions.
     """
-    retriever = _recommendation_retriever()
-    search_kwargs = getattr(retriever, "search_kwargs", {})
-    logger.info("Searching Qdrant recommendation evidence (k=%s)", search_kwargs.get("k"))
     logger.debug("Qdrant retrieval query: %s", query)
     try:
-        documents = retriever.invoke(query)
+        documents = retrieve_recommendation_documents(query)
     except Exception:
         logger.warning(
             "Qdrant recommendation retrieval failed; reconnecting and retrying",
@@ -40,7 +33,7 @@ def search_game_recommendations(query: str) -> str:
         )
         reset_qdrant_vector_store()
         try:
-            documents = _recommendation_retriever().invoke(query)
+            documents = retrieve_recommendation_documents(query)
         except Exception:
             logger.exception("Qdrant recommendation retrieval failed")
             raise

@@ -1,10 +1,13 @@
 import logging
+from functools import lru_cache
 
+from fastembed.rerank.cross_encoder import TextCrossEncoder
 from langchain_core.documents import Document
-from langchain_core.vectorstores import VectorStoreRetriever
 
 from src.config import (
     LOG_RETRIEVED_CONTENT_MAX_CHARS,
+    RERANK_MODEL_NAME,
+    RETRIEVER_CANDIDATE_K,
     RETRIEVER_K,
 )
 from src.qdrant_store import qdrant_vector_store
@@ -12,10 +15,36 @@ from src.qdrant_store import qdrant_vector_store
 logger = logging.getLogger(__name__)
 
 
-def build_recommendation_retriever(k: int = RETRIEVER_K) -> VectorStoreRetriever:
-    """Return a LangChain retriever over the game recommendation collection."""
-    logger.info("Building Qdrant recommendation retriever (k=%s)", k)
-    return qdrant_vector_store().as_retriever(search_kwargs={"k": k})
+@lru_cache(maxsize=1)
+def recommendation_reranker() -> TextCrossEncoder:
+    logger.info("Loading recommendation reranker '%s'", RERANK_MODEL_NAME)
+    return TextCrossEncoder(model_name=RERANK_MODEL_NAME)
+
+
+def retrieve_recommendation_documents(query: str) -> list[Document]:
+    """Retrieve hybrid candidates from Qdrant and rerank them for the query."""
+    documents = qdrant_vector_store().similarity_search(
+        query,
+        k=RETRIEVER_CANDIDATE_K,
+    )
+    if not documents:
+        return []
+
+    scores = recommendation_reranker().rerank(
+        query,
+        [document.page_content for document in documents],
+    )
+    ranked = sorted(
+        zip(scores, documents, strict=True),
+        key=lambda item: item[0],
+        reverse=True,
+    )
+    logger.info(
+        "Reranked %s Qdrant candidates to %s recommendation fragments",
+        len(documents),
+        min(RETRIEVER_K, len(documents)),
+    )
+    return [document for _, document in ranked[:RETRIEVER_K]]
 
 
 def _truncate_content(content: str) -> str:

@@ -22,6 +22,14 @@ SPARSE_VECTOR_NAME = os.getenv("SPARSE_VECTOR_NAME")
 CONTENT_PAYLOAD_KEY = os.getenv("CONTENT_PAYLOAD_KEY")
 METADATA_PAYLOAD_KEY = os.getenv("METADATA_PAYLOAD_KEY")
 RETRIEVER_K = int(os.getenv("RETRIEVER_K", "5"))
+RETRIEVER_CANDIDATE_K = int(os.getenv("RETRIEVER_CANDIDATE_K", "20"))
+RERANK_MODEL_NAME = os.getenv(
+    "RERANK_MODEL_NAME", "Xenova/ms-marco-MiniLM-L-6-v2"
+)
+if not 0 < RETRIEVER_K <= RETRIEVER_CANDIDATE_K:
+    raise ValueError(
+        "RETRIEVER_K must be positive and no greater than RETRIEVER_CANDIDATE_K"
+    )
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 LOG_RETRIEVED_CONTENT_MAX_CHARS = int(os.getenv("LOG_RETRIEVED_CONTENT_MAX_CHARS", "1000"))
 
