@@ -5,7 +5,7 @@ RAG-powered agent for recommending video games from a Qdrant collection of game 
 ## What it does
 
 - Takes questions like "Recommend a game like Hollow Knight" or "What should I play if I want a relaxing farming game?"
-- Retrieves relevant game evidence from Qdrant.
+- Retrieves dense and BM25 candidates from Qdrant, fuses them with RRF, and reranks them with a local cross-encoder.
 - Answers only from retrieved evidence instead of inventing details.
 - Refuses unrelated questions.
 
@@ -25,6 +25,9 @@ Set the values for your environment. Qdrant connection, collection, embedding,
 vector, and payload settings are required and must match the existing collection
 schema. `QDRANT_API_KEY` may be empty for local Qdrant. `OPENAI_BASE_URL` is
 optional if you use a compatible local or hosted endpoint.
+`RETRIEVER_CANDIDATE_K` controls the hybrid candidate pool, `RETRIEVER_K`
+controls how many reranked fragments reach the agent, and `RERANK_MODEL_NAME`
+selects the FastEmbed cross-encoder.
 
 ## Run
 
